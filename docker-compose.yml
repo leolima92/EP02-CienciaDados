@@ -1,0 +1,14 @@
+services:
+  neo4j:
+    image: neo4j:5.26
+    container_name: neo4j-movielens
+    ports:
+      - "7474:7474"   # interface web (Neo4j Browser)
+      - "7687:7687"   # Bolt (conexão do Python)
+    environment:
+      NEO4J_AUTH: neo4j/movielens123
+    volumes:
+      - neo4j_data:/data
+
+volumes:
+  neo4j_data:
