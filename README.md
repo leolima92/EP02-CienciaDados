@@ -9,22 +9,26 @@ Sistema de recomendação baseado em **filtragem colaborativa** (similaridade en
 
 ---
 
-## Sumário
-
-1. [Modelagem do grafo](#1-modelagem-do-grafo)
-2. [Sistema de recomendação](#2-sistema-de-recomendação)
-3. [Avaliação do modelo](#3-avaliação-do-modelo)
-4. [Estrutura do projeto](#estrutura-do-projeto)
-5. [Como executar](#como-executar)
-6. [Consultas de exemplo](#consultas-de-exemplo)
-
----
 
 ## 1. Modelagem do grafo
 
 Usamos apenas `movies.csv` e `ratings.csv` do **MovieLens Latest Small** (100.836 avaliações, 9.742 filmes, 610 usuários).
 
-<img width="1387" height="590" alt="image" src="https://github.com/user-attachments/assets/34b36e31-b527-45b9-b2cd-c1c71b800b03" />
+```
+                 RATED                          IN_GENRE
+ ┌──────────┐  {rating, timestamp, split}  ┌──────────────┐          ┌─────────┐
+ │   User   │ ───────────────────────────> │    Movie     │ ───────> │  Genre  │
+ │ userId   │                              │ movieId      │          │ name    │
+ └──────────┘                              │ title, year  │          └─────────┘
+                                           │ media_treino │
+                                           │ qtd_treino   │
+                                           └──────┬───────┘
+                                                  │ SIMILAR {pearson, comuns}
+                                                  │ (entre dois filmes)
+                                           ┌──────┴───────┐
+                                           │    Movie     │
+                                           └──────────────┘
+```
 
 
 ### Nós
@@ -112,6 +116,18 @@ onde $\mathcal{N}_k(i;u)$ são os $k$ filmes com maior $c(i,j)$ entre os que o u
 > **Observação sobre o enunciado:** na fórmula do enunciado, o numerador usa $r_i^k$ e soma em $\mathcal{N}$, enquanto o denominador soma em $\mathcal{N}_k(x)$. Interpretamos como acima: a nota usada é a do **usuário $u$ no filme vizinho $j$** ($r^u_j$), e os dois somatórios percorrem o **mesmo conjunto** de vizinhos.
 
 A previsão é calculada direto no Neo4j, percorrendo `User -RATED-> Movie -SIMILAR- Movie`: a partir dos filmes que o usuário avaliou no treino, o grafo chega aos filmes parecidos.
+
+<img width="1030" height="500" alt="visualisation" src="https://github.com/user-attachments/assets/3589cca5-ff25-49c7-bb09-17a730b93db8" />
+
+
+*O usuário 1 (centro), o filme Matrix com seus gêneros e alguns dos filmes parecidos com Matrix (arestas `SIMILAR`) que o usuário 1 avaliou (arestas `RATED`). São esses vizinhos que o KNN usa para prever a nota do usuário 1 para Matrix (4,34). Consulta usada:*
+
+```cypher
+MATCH (u:User {userId: 1})-[r:RATED]->(m:Movie {movieId: 2571})-[g:IN_GENRE]->(gen:Genre)
+MATCH (m)-[s:SIMILAR]-(o:Movie)<-[r2:RATED]-(u)
+RETURN u, r, m, g, gen, s, o, r2
+LIMIT 30
+```
 
 **Parâmetros:**
 
@@ -232,6 +248,8 @@ O script busca no grafo, de uma vez, os vizinhos de cada avaliação de teste, p
 ├── recomendar.py        # KNN: nota prevista e top recomendações por usuário
 ├── avaliar.py           # precisão, recall, cobertura e comparação de parâmetros
 ├── resultados_avaliacao.csv  # saída do avaliar.py (36 configurações)
+├── docs/
+│   └── vizinhos-matrix.png   # exemplo do grafo: vizinhos usados pelo KNN
 └── data/                # CSVs do MovieLens (não versionados)
 ```
 
