@@ -9,6 +9,17 @@ Sistema de recomendação baseado em **filtragem colaborativa** (similaridade en
 
 ---
 
+## Sumário
+
+1. [Modelagem do grafo](#1-modelagem-do-grafo)
+2. [Sistema de recomendação](#2-sistema-de-recomendação)
+3. [Avaliação do modelo](#3-avaliação-do-modelo)
+4. [Estrutura do projeto](#estrutura-do-projeto)
+5. [Como executar](#como-executar)
+6. [Consultas de exemplo](#consultas-de-exemplo)
+
+---
+
 ## 1. Modelagem do grafo
 
 Usamos apenas `movies.csv` e `ratings.csv` do **MovieLens Latest Small** (100.836 avaliações, 9.742 filmes, 610 usuários).
@@ -129,16 +140,81 @@ python recomendar.py 1 --k 20 --n 15 --min-vizinhos 10
 
 O modelo acerta a **ordem**: o filme de que o usuário gostou menos recebe a menor previsão. Mas ele comprime a **escala**. Como a fórmula é uma média ponderada das notas do próprio usuário, quem dá notas altas para quase tudo recebe previsões altas para quase tudo. Filmes sem nenhum vizinho avaliado pelo usuário ficam sem previsão.
 
-**Efeito do mínimo de vizinhos nas recomendações:** com o mínimo de 3, o topo da lista do usuário 1 fica cheio de previsões 5,00 baseadas em só 3 vizinhos. Com `--min-vizinhos 10`, entram filmes com mais evidência, como *American Gangster*, com 30 vizinhos e previsão de 4,76. O valor padrão vai ser escolhido com base na avaliação.
+**Efeito do mínimo de vizinhos nas recomendações:** com o mínimo de 3, o topo da lista do usuário 1 fica cheio de previsões 5,00 baseadas em só 3 vizinhos. Com `--min-vizinhos 10`, entram filmes com mais evidência, como *American Gangster*, com 30 vizinhos e previsão de 4,76. A escolha dos valores padrão está justificada na [avaliação](#3-avaliação-do-modelo).
 
 ---
 
 ## 3. Avaliação do modelo
 
-- Divisão **80% treino / 20% teste**, por usuário.
-- Métricas: **precisão** e **recall** sobre as avaliações de teste.
+### Metodologia
 
-*Em desenvolvimento.*
+- **Divisão 80% treino / 20% teste**, por usuário: 80.419 avaliações de treino e 20.417 de teste.
+- O modelo usa **só o treino**. As correlações de Pearson e os vizinhos do KNN vêm das arestas com `split = 'train'`.
+- Para cada avaliação de teste, o modelo prevê a nota e a compara com a nota real.
+- **Relevante:** nota real ≥ 4. **Recomendado:** nota prevista ≥ 4.
+
+| Métrica | Definição |
+|---|---|
+| **Precisão** | Recomendados que eram relevantes ÷ total de recomendados |
+| **Recall** | Recomendados que eram relevantes ÷ total de relevantes do teste (relevantes sem previsão contam como não recomendados) |
+| **Precision@10** | Para cada usuário, os 10 filmes de teste com maior nota prevista: fração deles que é relevante. Média entre os usuários |
+| **Recall@10** | Para cada usuário: relevantes entre os 10 primeiros ÷ total de relevantes dele. Média entre os usuários |
+| **Cobertura** | Avaliações de teste para as quais o modelo conseguiu prever uma nota |
+| **MAE / RMSE** | Erro médio (absoluto e quadrático) da nota prevista. Métrica extra |
+
+Para dar contexto aos números, usamos duas referências:
+
+- **Recomendar tudo:** a precisão seria a fração de relevantes no teste, **48,4%**.
+- **Ordem aleatória:** a Precision@10 esperada se os filmes de cada usuário fossem ordenados ao acaso.
+
+### Resultado (configuração escolhida)
+
+`k = 30` vizinhos, mínimo de **10** usuários em comum por aresta `SIMILAR` e mínimo de **3** vizinhos por previsão.
+
+| Métrica | Modelo | Referência |
+|---|---|---|
+| Precisão | **76,3%** | 48,4% (recomendar tudo) |
+| Recall | **31,8%** | – |
+| Precision@10 | **63,5%** | 59,6% (ordem aleatória) |
+| Recall@10 | **57,1%** | – |
+| Cobertura | **68,1%** (13.910 de 20.417) | – |
+| MAE / RMSE | **0,686 / 0,896** | – |
+
+### Comparação de parâmetros
+
+Testamos 36 combinações: `k` ∈ {10, 20, 30, 50}, mínimo de usuários em comum ∈ {10, 20, 30} e mínimo de vizinhos ∈ {1, 3, 10}. A tabela completa está em [`resultados_avaliacao.csv`](resultados_avaliacao.csv). Um recorte com `k = 30`:
+
+| Mín. usuários em comum | Mín. vizinhos | Cobertura | Precisão | Recall | P@10 | R@10 | MAE |
+|---|---|---|---|---|---|---|---|
+| 10 | 1  | 70,9% | 74,2% | 33,6% | 62,5% | 59,7% | 0,701 |
+| **10** | **3** | **68,1%** | **76,3%** | **31,8%** | **63,5%** | **57,1%** | **0,686** |
+| 10 | 10 | 62,5% | 78,6% | 28,0% | 64,9% | 49,7% | 0,672 |
+| 20 | 3  | 47,8% | 76,2% | 28,3% | 65,7% | 48,6% | 0,670 |
+| 20 | 10 | 40,1% | 79,4% | 22,7% | 68,2% | 40,2% | 0,652 |
+| 30 | 3  | 33,3% | 78,0% | 22,9% | 68,2% | 42,4% | 0,656 |
+| 30 | 10 | 25,7% | 81,9% | 17,2% | 69,2% | 30,2% | 0,631 |
+
+### Análise
+
+1. **O `k` quase não muda o resultado.** Entre 10 e 50 vizinhos, as métricas variam menos de 1 ponto percentual. Depois dos primeiros 20 vizinhos, os seguintes têm correlação menor e alteram pouco a média ponderada.
+
+2. **Os mínimos controlam um trade-off entre acerto e alcance.** Exigir mais usuários em comum ou mais vizinhos deixa as previsões mais confiáveis: a precisão sobe até 81,9% e o MAE cai até 0,631. Em troca, o modelo deixa de prever a maior parte dos casos, e a cobertura cai de 70,9% para 25,7%. O recall cai junto, porque relevantes sem previsão contam como não recomendados.
+
+3. **Por que escolhemos a configuração padrão.** Ela fica no meio da tabela: ganha 28 pontos de precisão sobre recomendar tudo e ainda prevê nota para 68% dos casos. As configurações mais restritas ganham de 2 a 5 pontos de precisão, mas deixam de prever metade ou mais das avaliações de teste.
+
+4. **O ganho é maior na precisão com limiar do que na Precision@10.** Contra as referências, o modelo ganha **28 pontos** na precisão com limiar, mas só **4 pontos** na Precision@10. Isso indica que boa parte do acerto com limiar vem do **perfil do usuário**. Como a previsão é uma média das notas do próprio usuário, quem costuma dar notas altas recebe previsões altas e, de fato, gosta mais dos filmes que assiste. Já ordenar os filmes **dentro** do gosto de cada usuário é mais difícil, e o ganho sobre o acaso nessa tarefa é menor.
+
+5. **A cobertura é a principal limitação.** Só os 1.931 filmes com pelo menos 10 avaliações de treino têm arestas `SIMILAR`. Filmes pouco avaliados, ou filmes cujos vizinhos o usuário não viu, ficam sem previsão. É o problema clássico de esparsidade da filtragem colaborativa.
+
+**Possíveis melhorias:** usar a média do usuário como base da previsão, somando a ela os desvios ponderados dos vizinhos, o que corrige a escala comprimida; ponderar a correlação pelo número de usuários em comum (*significance weighting*), em vez de usar um corte fixo; e cair na média do filme quando não houver vizinhos, para aumentar a cobertura.
+
+### Como reproduzir
+
+```bash
+python avaliar.py
+```
+
+O script busca no grafo, de uma vez, os vizinhos de cada avaliação de teste, pelo caminho `User -RATED-> Movie -SIMILAR- Movie`. Depois refaz as previsões em memória para cada combinação de parâmetros. Filtrar as arestas com `comuns ≥ 20` dá o mesmo resultado que rodar `python similaridade.py 20`, por isso não é preciso recalcular o Pearson. Como conferência, o script recalcula a previsão do usuário 1 para *Matrix* e obtém o mesmo valor do `recomendar.py` (4,34 com 30 vizinhos).
 
 ---
 
@@ -154,6 +230,8 @@ O modelo acerta a **ordem**: o filme de que o usuário gostou menos recebe a men
 ├── inserir.py           # carga: User, Movie, Genre, RATED, IN_GENRE + divisão 80/20
 ├── similaridade.py      # Pearson entre filmes -> arestas SIMILAR
 ├── recomendar.py        # KNN: nota prevista e top recomendações por usuário
+├── avaliar.py           # precisão, recall, cobertura e comparação de parâmetros
+├── resultados_avaliacao.csv  # saída do avaliar.py (36 configurações)
 └── data/                # CSVs do MovieLens (não versionados)
 ```
 
@@ -205,6 +283,7 @@ python testar_conexao.py   # deve imprimir "conectou"
 python inserir.py          # carga do grafo + divisão treino/teste
 python similaridade.py     # correlação de Pearson -> arestas SIMILAR
 python recomendar.py 1     # top 10 recomendações para o usuário 1
+python avaliar.py          # métricas no conjunto de teste
 ```
 
 Para apagar tudo e recomeçar do zero: `docker compose down -v`.
