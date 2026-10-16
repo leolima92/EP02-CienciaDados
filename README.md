@@ -248,8 +248,6 @@ O script busca no grafo, de uma vez, os vizinhos de cada avaliação de teste, p
 ├── recomendar.py        # KNN: nota prevista e top recomendações por usuário
 ├── avaliar.py           # precisão, recall, cobertura e comparação de parâmetros
 ├── resultados_avaliacao.csv  # saída do avaliar.py (36 configurações)
-├── docs/
-│   └── vizinhos-matrix.png   # exemplo do grafo: vizinhos usados pelo KNN
 └── data/                # CSVs do MovieLens (não versionados)
 ```
 
